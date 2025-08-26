@@ -133,24 +133,24 @@ export async function POST(request: NextRequest) {
 }
 
 async function parseForm(request: NextRequest) {
-  const contentType = request.headers.get('content-type') || ''
-  const boundary = contentType.split('boundary=')[1]?.split(';')[0]
-  
-  if (!boundary) {
-    throw new Error('No boundary found in content type')
-  }
+  try {
+    const formData = await request.formData()
+    console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
+      key,
+      type: typeof value,
+      size: value instanceof File ? value.size : 'N/A',
+      name: value instanceof File ? value.name : 'N/A'
+    })))
+    
+    const fields: Record<string, string[]> = {}
+    const files: any[] = []
 
-  const formData = await request.formData()
-  const entries = Array.from(formData.entries())
-  
-  const fields: Record<string, string[]> = {}
-  const files: any[] = []
-
-  for (const [key, value] of entries) {
-    if (key === 'sku') {
-      fields[key] = [value.toString()]
-    } else if (key.startsWith('files')) {
-      if (value instanceof File) {
+    for (const [key, value] of formData.entries()) {
+      if (key === 'sku') {
+        fields[key] = [value.toString()]
+        console.log('Found SKU:', value.toString())
+      } else if (key.startsWith('files') && value instanceof File) {
+        console.log('Found file:', { name: value.name, size: value.size, type: value.type })
         files.push({
           originalFilename: value.name,
           filepath: '', // Will be handled differently
@@ -160,9 +160,13 @@ async function parseForm(request: NextRequest) {
         })
       }
     }
-  }
 
-  return { fields, files }
+    console.log('Parsed result:', { sku: fields.sku?.[0], filesCount: files.length })
+    return { fields, files }
+  } catch (error) {
+    console.error('Error parsing form:', error)
+    throw error
+  }
 }
 
 async function processFileWithRetry(
