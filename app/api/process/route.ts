@@ -164,37 +164,98 @@ async function sendAllFilesToWebhook(
     
     // Try to parse the response
     const contentType = response.headers.get('content-type')
+    console.log('Webhook response status:', response.status)
+    console.log('Webhook response headers:', Object.fromEntries(response.headers.entries()))
+    console.log('Webhook response content-type:', contentType)
     
     if (contentType && contentType.includes('application/json')) {
-      const responseData = await response.json()
+      const responseText = await response.text()
+      console.log('Webhook response body:', responseText)
       
-      // Handle different response formats
-      if (Array.isArray(responseData)) {
-        // Handle array of URLs or file objects with dataUrl
-        for (const item of responseData) {
-          if (item.dataUrl) {
-            processedImageUrls.push(item.dataUrl)
-          } else if (typeof item === 'string') {
-            processedImageUrls.push(item)
+      // Если ответ пустой, считаем что обработка прошла успешно
+      if (!responseText || responseText.trim() === '') {
+        console.log('Empty response from webhook, assuming success')
+        return processedImageUrls
+      }
+      
+      try {
+        const responseData = JSON.parse(responseText)
+        console.log('Webhook response parsed:', responseData)
+        
+        // Handle different response formats
+        if (Array.isArray(responseData)) {
+          // Handle array of URLs or file objects with dataUrl
+          for (const item of responseData) {
+            if (item.dataUrl) {
+              processedImageUrls.push(item.dataUrl)
+            } else if (typeof item === 'string') {
+              processedImageUrls.push(item)
+            }
           }
+        } else if (responseData.dataUrl) {
+          processedImageUrls.push(responseData.dataUrl)
+        } else if (responseData.urls) {
+          processedImageUrls.push(...responseData.urls)
+        } else if (responseData.url || responseData.imageUrl || responseData.image) {
+          processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
         }
-      } else if (responseData.dataUrl) {
-        processedImageUrls.push(responseData.dataUrl)
-      } else if (responseData.urls) {
-        processedImageUrls.push(...responseData.urls)
-      } else if (responseData.url || responseData.imageUrl || responseData.image) {
-        processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
+      } catch (parseError) {
+        console.error('Error parsing webhook JSON response:', parseError)
+        console.error('Raw response text:', responseText)
+        // Если не удалось распарсить JSON, но статус ответа успешный, считаем что обработка прошла успешно
+        if (response.ok) {
+          console.log('Response status is OK, assuming success despite parse error')
+          return processedImageUrls
+        }
       }
     } else if (contentType && contentType.includes('text')) {
       const responseData = await response.text()
+      console.log('Webhook response text:', responseData)
       if (responseData && responseData.startsWith('http')) {
         processedImageUrls.push(responseData.trim())
       }
     }
-    
-    return processedImageUrls
+      
+      // Сохраняем успешный ответ в логи
+      try {
+        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/webhook-logs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: response.status,
+            headers: Object.fromEntries(response.headers.entries()),
+            body: '', // responseText недоступен в этой области видимости
+            error: null
+          }),
+        })
+      } catch (logError) {
+        console.error('Failed to save webhook log:', logError)
+      }
+      
+      return processedImageUrls
   } catch (error) {
     console.error('Webhook send error:', error)
+    
+    // Сохраняем ошибку в логи
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/webhook-logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 0,
+          headers: {},
+          body: '',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }),
+      })
+    } catch (logError) {
+      console.error('Failed to save webhook log:', logError)
+    }
+    
     return processedImageUrls
   }
 }

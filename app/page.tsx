@@ -19,7 +19,7 @@ interface ProcessingItem {
   error?: string
 }
 
-type Step = 'sku' | 'files' | 'process' | 'scanner'
+type Step = 'sku' | 'files' | 'scanner' | 'logs'
 
 export default function HomePage() {
   const [step, setStep] = useState<Step>('sku')
@@ -28,6 +28,8 @@ export default function HomePage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingItems, setProcessingItems] = useState<ProcessingItem[]>([])
   const [showScanner, setShowScanner] = useState(false)
+  const [webhookLogs, setWebhookLogs] = useState<any[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   const { toast } = useToast()
 
   const handleSkuChange = (value: string) => {
@@ -82,7 +84,6 @@ export default function HomePage() {
     }
 
     setIsProcessing(true)
-    setProcessingItems([])
     
     try {
       const formData = new FormData()
@@ -110,8 +111,10 @@ export default function HomePage() {
         previewUrl: item.previewUrl
       }))
       
-      setProcessingItems(newItems)
-      setStep('process')
+      setProcessingItems([]) // Очищаем результаты обработки
+      setStep('sku') // Возвращаемся на начальную страницу
+      setSku('')
+      setFiles([])
       toast({
         title: 'Успешно',
         description: `Файлы отправлены на обработку: ${newItems.length} файлов`,
@@ -131,15 +134,32 @@ export default function HomePage() {
     setStep('sku')
   }
 
-  const handleBackToFiles = () => {
-    setStep('files')
-  }
 
   const handleStartOver = () => {
     setStep('sku')
     setSku('')
     setFiles([])
     setProcessingItems([])
+  }
+
+  const loadWebhookLogs = async () => {
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch('/api/webhook-logs')
+      if (response.ok) {
+        const data = await response.json()
+        setWebhookLogs(data.logs)
+      }
+    } catch (error) {
+      console.error('Failed to load webhook logs:', error)
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить логи webhook',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoadingLogs(false)
+    }
   }
 
   return (
@@ -152,25 +172,18 @@ export default function HomePage() {
       {/* Progress indicator */}
       <div className="flex items-center justify-center mb-6 sm:mb-8">
         <div className="flex items-center space-x-2 sm:space-x-4">
-          <div className={`flex items-center ${step === 'sku' ? 'text-blue-600' : step === 'files' || step === 'process' ? 'text-green-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'sku' ? 'bg-blue-600 text-white' : step === 'files' || step === 'process' ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+          <div className={`flex items-center ${step === 'sku' ? 'text-blue-600' : step === 'files' ? 'text-green-600' : 'text-gray-400'}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'sku' ? 'bg-blue-600 text-white' : step === 'files' ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
               1
             </div>
             <span className="ml-2 font-medium">SKU</span>
           </div>
           <ArrowRight className="h-4 w-4 text-gray-400" />
-          <div className={`flex items-center ${step === 'files' ? 'text-blue-600' : step === 'process' ? 'text-green-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'files' ? 'bg-blue-600 text-white' : step === 'process' ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+          <div className={`flex items-center ${step === 'files' ? 'text-blue-600' : 'text-gray-400'}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'files' ? 'bg-blue-600 text-white' : 'bg-gray-300'}`}>
               2
             </div>
             <span className="ml-2 font-medium">Файлы</span>
-          </div>
-          <ArrowRight className="h-4 w-4 text-gray-400" />
-          <div className={`flex items-center ${step === 'process' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'process' ? 'bg-blue-600 text-white' : 'bg-gray-300'}`}>
-              3
-            </div>
-            <span className="ml-2 font-medium">Обработка</span>
           </div>
         </div>
       </div>
@@ -275,106 +288,17 @@ export default function HomePage() {
                 ← Назад
               </Button>
               <Button
-                onClick={() => setStep('process')}
+                onClick={handleProcess}
                 disabled={files.length === 0}
                 className="flex-1 text-sm sm:text-base px-4 py-2"
               >
-                Проверить файлы →
+                Отправить →
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 3: Processing */}
-      {step === 'process' && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              Шаг 3: Обработка
-            </CardTitle>
-            <CardDescription className="text-sm sm:text-base">
-              Отправка файлов на обработку для SKU: {sku}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center">
-              <p className="text-base sm:text-lg mb-4">Готовы отправить файлы на обработку?</p>
-              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg mb-4">
-                <p className="font-medium text-sm sm:text-base">SKU: {sku}</p>
-                <p className="text-sm sm:text-base">Файлов: {files.length}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                onClick={handleBackToFiles}
-                className="flex-1 text-sm sm:text-base px-4 py-2"
-              >
-                ← Назад
-              </Button>
-              <Button
-                onClick={handleProcess}
-                disabled={isProcessing}
-                className="flex-1 text-sm sm:text-base px-4 py-2"
-              >
-                {isProcessing ? 'Обработка...' : 'Отправить'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleStartOver}
-                className="flex-1 text-sm sm:text-base px-4 py-2"
-              >
-                🔄 Начать заново
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Results */}
-      {processingItems.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg sm:text-xl">Результаты обработки</CardTitle>
-            <CardDescription className="text-sm sm:text-base">
-              Найдено {processingItems.filter(item => item.status === 'done').length} обработанных файлов
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {processingItems.map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-medium text-sm">{item.originalName}</p>
-                    <p className="text-xs text-gray-500">{item.serverName}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {item.previewUrl && (
-                      <a
-                        href={item.previewUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 text-sm"
-                      >
-                        Превью
-                      </a>
-                    )}
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      item.status === 'done' ? 'bg-green-100 text-green-800' : 
-                      item.status === 'failed' ? 'bg-red-100 text-red-800' : 
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {item.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Barcode Scanner Modal */}
       {showScanner && (
