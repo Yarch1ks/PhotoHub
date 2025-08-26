@@ -350,8 +350,10 @@ async function sendAllFilesToWebhook(
         
         // Handle array of URLs or single URL
         if (Array.isArray(responseData)) {
+          console.log('Response is an array with length:', responseData.length)
           // Check if array contains file objects with dataUrl
           if (responseData.length > 0 && responseData[0].dataUrl) {
+            console.log('Array contains file objects with dataUrl')
             // Handle array of file objects with dataUrl
             for (const fileData of responseData) {
               if (fileData.dataUrl) {
@@ -362,6 +364,7 @@ async function sendAllFilesToWebhook(
                 const base64Data = dataUrl.split(',')[1]
                 if (base64Data) {
                   const binaryData = Buffer.from(base64Data, 'base64')
+                  console.log('Extracted binary data, size:', binaryData.length)
                   
                   // Store binary data in processedFiles for each file
                   for (let i = 0; i < processedResults.length; i++) {
@@ -374,6 +377,7 @@ async function sendAllFilesToWebhook(
                   for (let i = 0; i < processedResults.length; i++) {
                     processedImageUrls.push(dataUrl)
                   }
+                  console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
                 } else {
                   console.error('Invalid dataUrl format')
                   for (let i = 0; i < processedResults.length; i++) {
@@ -383,14 +387,18 @@ async function sendAllFilesToWebhook(
               }
             }
           } else {
+            console.log('Array contains simple URLs, pushing all URLs')
             // Handle array of simple URLs
             processedImageUrls.push(...responseData)
           }
         } else if (responseData.urls) {
+          console.log('Response has urls property')
           processedImageUrls.push(...responseData.urls)
         } else if (responseData.url || responseData.imageUrl || responseData.image) {
+          console.log('Response has single URL property')
           processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
         } else if (responseData.dataUrl) {
+          console.log('Response has single dataUrl property')
           // Handle single dataUrl format from webhook - convert to binary and store
           const dataUrl = responseData.dataUrl
           console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
@@ -399,6 +407,7 @@ async function sendAllFilesToWebhook(
           const base64Data = dataUrl.split(',')[1]
           if (base64Data) {
             const binaryData = Buffer.from(base64Data, 'base64')
+            console.log('Extracted binary data, size:', binaryData.length)
             
             // Store binary data in processedFiles for each file
             for (let i = 0; i < processedResults.length; i++) {
@@ -411,6 +420,7 @@ async function sendAllFilesToWebhook(
             for (let i = 0; i < processedResults.length; i++) {
               processedImageUrls.push(dataUrl)
             }
+            console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
           } else {
             console.error('Invalid dataUrl format')
             for (let i = 0; i < processedResults.length; i++) {
