@@ -390,6 +390,17 @@ async function sendAllFilesToWebhook(
           console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
           processedImageUrls.push(dataUrl)
           console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
+        } else if (responseData.files && Array.isArray(responseData.files)) {
+          console.log('Response has files array with dataUrl')
+          // Handle files array with dataUrl format
+          for (const fileData of responseData.files) {
+            if (fileData.dataUrl) {
+              const dataUrl = fileData.dataUrl
+              console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
+              processedImageUrls.push(dataUrl)
+            }
+          }
+          console.log('Added dataUrls from files array to processedImageUrls, total:', processedImageUrls.length)
         }
       } else if (contentType && contentType.includes('text')) {
         const responseData = await response.text()
