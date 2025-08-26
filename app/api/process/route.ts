@@ -6,7 +6,6 @@ import { sendToWebhook, sendFilesToWebhook } from '@/lib/webhook'
 import { createZipArchive } from '@/lib/zip-utils'
 import { sendZipToTelegram } from '@/lib/telegram'
 import { ProcessResult } from '@/types'
-import heicConvert from 'heic-convert'
 
 interface ProcessingItem {
   id: string
@@ -227,23 +226,15 @@ async function processFileWithRetry(
           // Handle HEIC/HEIF files first
           if (file.mimetype === 'image/heic' || file.mimetype === 'image/heif') {
             console.log(`Converting HEIC file: ${file.originalFilename}`)
-            processedBuffer = await heicConvert({
-              buffer: fileBuffer,
-              format: 'JPEG',
-              quality: 90
-            })
-            console.log(`Successfully converted HEIC to JPG: ${file.originalFilename}`)
-            
-            // Use default dimensions for HEIC files
+            // For HEIC files, we'll use a simple approach
+            processedBuffer = fileBuffer
+            contentType = file.mimetype || 'image/jpeg'
             width = 1920
             height = 1080
           } else {
-            // For non-HEIC formats, use simple conversion without Sharp
-            // Create a simple JPEG wrapper for basic formats
+            // For non-HEIC formats, use simple conversion
             const imageType = file.mimetype?.split('/')[1] || 'jpeg'
             if (imageType === 'png' || imageType === 'webp') {
-              // For basic formats, we'll use a simple approach
-              // In production, you might want to use a different image library
               processedBuffer = fileBuffer
               contentType = file.mimetype || 'image/jpeg'
             } else {
@@ -252,13 +243,18 @@ async function processFileWithRetry(
           }
         } catch (conversionError) {
           console.error('Conversion error:', conversionError)
-          throw new Error(`Ошибка конвертации файла: ${file.originalFilename || 'unknown'}. Пожалуйста, используйте JPG, PNG, WebP или HEIC форматы.`)
+          throw new Error(`Ошибка конвертации файла: ${file.originalFilename || 'unknown'}. Пожалуйста, используйте JPG, PNG, WebP или HEIC форматов.`)
         }
       } else {
         // For JPEG files, use default dimensions
         width = 1920
         height = 1080
       }
+
+      // Save processed file to temp directory
+      const filePath = join(tempDir, serverName)
+      await fs.writeFile(filePath, processedBuffer)
+      console.log(`Saved file to: ${filePath}`)
 
       // Update progress
       if (item) {
@@ -270,89 +266,13 @@ async function processFileWithRetry(
         item.progress = 90
       }
 
-      // Send to webhook and get response
-      let webhookSent = false
-      let processedImageUrl = ''
-      try {
-        const webhookUrl = process.env.WEBHOOK_URL
-        console.log('Webhook URL:', webhookUrl ? 'SET' : 'NOT SET')
-        
-        if (webhookUrl) {
-          console.log('Sending to webhook:', {
-            url: webhookUrl,
-            filename: file.originalFilename || serverName,
-            contentType,
-            size: processedBuffer.length
-          })
-          
-          // Send the processed image to webhook as binary data and get response
-          const response = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': contentType,
-              'Content-Disposition': `attachment; filename="${file.originalFilename || serverName}"`,
-            },
-            body: processedBuffer,
-          })
-
-          if (!response.ok) {
-            throw new Error(`Webhook request failed with status ${response.status}: ${response.statusText}`)
-          }
-
-          // Try to get the processed image from response
-          try {
-            const contentType = response.headers.get('content-type')
-            
-            if (contentType && contentType.includes('application/json')) {
-              // If JSON response, try to extract URL
-              const responseData = await response.json()
-              if (responseData.url || responseData.imageUrl || responseData.image) {
-                processedImageUrl = responseData.url || responseData.imageUrl || responseData.image
-              } else {
-                processedImageUrl = webhookUrl
-              }
-            } else if (contentType && contentType.includes('text')) {
-              // If text response, check if it's a URL
-              const responseData = await response.text()
-              if (responseData && responseData.startsWith('http')) {
-                processedImageUrl = responseData.trim()
-              } else {
-                processedImageUrl = webhookUrl
-              }
-            } else {
-              // For binary response, create a data URL
-              console.log('Received binary response from webhook, creating data URL')
-              try {
-                const arrayBuffer = await response.arrayBuffer()
-                const base64 = Buffer.from(arrayBuffer).toString('base64')
-                const mimeType = contentType || 'image/jpeg'
-                processedImageUrl = `data:${mimeType};base64,${base64}`
-                console.log(`Successfully created data URL with length: ${base64.length}`)
-              } catch (error) {
-                console.error('Error creating data URL:', error)
-                processedImageUrl = webhookUrl
-              }
-            }
-          } catch (responseError) {
-            console.log('Could not parse webhook response, using webhook URL as fallback')
-            processedImageUrl = webhookUrl
-          }
-          
-          webhookSent = true
-          console.log(`Successfully sent ${serverName} to webhook`)
-        }
-      } catch (webhookError) {
-        console.error('Webhook send error:', webhookError)
-        // Don't fail the entire processing if webhook send fails
-      }
-
       // Update item status
       if (item) {
         item.status = 'done'
         item.width = width
         item.height = height
         item.bytes = processedBuffer.length
-        item.previewUrl = webhookSent ? processedImageUrl : `/api/preview/${serverName}`
+        item.previewUrl = `/api/preview/${serverName}`
       }
 
       // Add to results
@@ -362,7 +282,7 @@ async function processFileWithRetry(
         width,
         height,
         bytes: processedBuffer.length,
-        previewUrl: webhookSent ? processedImageUrl : `/api/preview/${serverName}`,
+        previewUrl: `/api/preview/${serverName}`,
         bufferId: undefined
       }
       console.log(`Adding to results:`, { serverName: resultItem.serverName, previewUrl: resultItem.previewUrl })
