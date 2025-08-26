@@ -323,9 +323,10 @@ async function sendAllFilesToWebhook(
       const fileBuffer = await getFileBuffer(result.serverName, sku)
       
       if (fileBuffer) {
+        // Use serverName (renamed file) instead of original filename
         const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'image/jpeg' })
-        formData.append(`files[${i}]`, blob, result.originalName)
-        console.log(`Added file ${i}:`, result.originalName)
+        formData.append(`files[${i}]`, blob, result.serverName)
+        console.log(`Added file ${i}:`, result.serverName)
       }
     }
     
