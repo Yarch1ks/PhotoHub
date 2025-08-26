@@ -27,6 +27,17 @@ const processingItems = new Map<string, ProcessingItem>()
 
 export async function POST(request: NextRequest) {
   try {
+    // Add File polyfill for standalone mode
+    if (typeof File === 'undefined') {
+      (global as any).File = class File extends Blob {
+        constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
+          super(bits, options)
+          this.name = name
+        }
+        name: string
+      }
+    }
+
     const formData = await parseForm(request)
     const sku = formData.fields.sku?.[0] || ''
     const files = formData.files || []
