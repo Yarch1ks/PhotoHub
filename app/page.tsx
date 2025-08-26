@@ -5,10 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Upload, ScanBarcode, Zap, ArrowRight } from 'lucide-react'
-import { BarcodeScanner } from '@/components/barcode-scanner'
+import { Upload, ArrowRight, Scan } from 'lucide-react'
 import { FileUploader } from '@/components/file-uploader'
-import { ProcessingQueue } from '@/components/processing-queue'
+import { BarcodeScanner } from '@/components/barcode-scanner'
 import { useToast } from '@/hooks/use-toast'
 
 interface ProcessingItem {
@@ -16,28 +15,40 @@ interface ProcessingItem {
   originalName: string
   serverName: string
   status: 'queued' | 'processing' | 'done' | 'failed'
-  progress?: number
-  width?: number
-  height?: number
-  bytes?: number
   previewUrl?: string
   error?: string
 }
 
-type Step = 'sku' | 'files' | 'process'
+type Step = 'sku' | 'files' | 'process' | 'scanner'
 
 export default function HomePage() {
   const [step, setStep] = useState<Step>('sku')
   const [sku, setSku] = useState('')
-  const [showScanner, setShowScanner] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingItems, setProcessingItems] = useState<ProcessingItem[]>([])
-  const [publicLinks, setPublicLinks] = useState<string[]>([])
+  const [showScanner, setShowScanner] = useState(false)
   const { toast } = useToast()
 
   const handleSkuChange = (value: string) => {
     setSku(value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
+  }
+
+  const handleBarcodeDetected = (barcode: string) => {
+    setSku(barcode.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
+    setShowScanner(false)
+    toast({
+      title: 'Штрихкод обнаружен',
+      description: `Найден штрихкод: ${barcode}`,
+    })
+  }
+
+  const handleOpenScanner = () => {
+    setShowScanner(true)
+  }
+
+  const handleCloseScanner = () => {
+    setShowScanner(false)
   }
 
   const handleFilesSelected = (selectedFiles: File[]) => {
@@ -92,13 +103,10 @@ export default function HomePage() {
       const result = await response.json()
       
       const newItems: ProcessingItem[] = result.items.map((item: any, index: number) => ({
-        id: item.bufferId || `${sku}-${index}`,
+        id: `${sku}-${index}`,
         originalName: item.originalName,
         serverName: item.serverName,
         status: item.previewUrl ? 'done' as const : 'queued' as const,
-        width: item.width,
-        height: item.height,
-        bytes: item.bytes,
         previewUrl: item.previewUrl
       }))
       
@@ -106,7 +114,7 @@ export default function HomePage() {
       setStep('process')
       toast({
         title: 'Успешно',
-        description: `Добавлено в очередь обработки: ${newItems.length} файлов`,
+        description: `Файлы отправлены на обработку: ${newItems.length} файлов`,
       })
     } catch (error) {
       toast({
@@ -116,92 +124,6 @@ export default function HomePage() {
       })
     } finally {
       setIsProcessing(false)
-    }
-  }
-
-  const handleDownloadZIP = async () => {
-    const doneItems = processingItems.filter(item => item.status === 'done')
-    if (doneItems.length === 0) return
-
-    try {
-      const response = await fetch('/api/zip-and-telegram', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sku,
-          items: doneItems.map(item => ({
-            serverName: item.serverName,
-            bufferId: item.id,
-            previewUrl: item.previewUrl
-          })),
-          links: publicLinks
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Ошибка создания ZIP')
-      }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${sku}_${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.zip`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-
-      toast({
-        title: 'Успешно',
-        description: 'ZIP архив готов к скачиванию',
-      })
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось создать ZIP архив',
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const handleSendToTelegram = async () => {
-    const doneItems = processingItems.filter(item => item.status === 'done')
-    if (doneItems.length === 0) return
-
-    try {
-      const response = await fetch('/api/zip-and-telegram', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sku,
-          items: doneItems.map(item => ({
-            serverName: item.serverName,
-            bufferId: item.id,
-            previewUrl: item.previewUrl
-          })),
-          links: publicLinks
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Ошибка отправки в Telegram')
-      }
-
-      toast({
-        title: 'Успешно',
-        description: 'Файлы отправлены в Telegram',
-      })
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось отправить файлы в Telegram',
-        variant: 'destructive',
-      })
     }
   }
 
@@ -218,13 +140,13 @@ export default function HomePage() {
     setSku('')
     setFiles([])
     setProcessingItems([])
-    setPublicLinks([])
   }
 
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-4xl">
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-2">PhotoHub</h1>
+        <p className="text-gray-600">Обработка изображений через webhook</p>
       </div>
 
       {/* Progress indicator */}
@@ -258,34 +180,34 @@ export default function HomePage() {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              <ScanBarcode className="h-5 w-5 sm:h-6" />
               Шаг 1: Введите SKU
             </CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Введите артикул товара или отсканируйте штрихкод
+              Введите артикул товара
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="sku" className="text-sm sm:text-base">SKU</Label>
-              <Input
-                id="sku"
-                value={sku}
-                onChange={(e) => handleSkuChange(e.target.value)}
-                placeholder="Например: ABC123"
-                maxLength={50}
-                className="text-center text-base sm:text-lg px-3 py-2"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowScanner(true)}
-                className="flex-1 text-sm sm:text-base px-4 py-2"
-              >
-                <ScanBarcode className="h-4 w-4 mr-2" />
-                Сканер штрихкодов
-              </Button>
+              <div className="flex gap-2">
+                <Input
+                  id="sku"
+                  value={sku}
+                  onChange={(e) => handleSkuChange(e.target.value)}
+                  placeholder="Например: ABC123"
+                  maxLength={50}
+                  className="flex-1 text-center text-base sm:text-lg px-3 py-2"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleOpenScanner}
+                  className="px-3 py-2"
+                  title="Сканировать штрихкод"
+                >
+                  <Scan className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <Button
               onClick={handleNextStep}
@@ -369,16 +291,15 @@ export default function HomePage() {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              <Zap className="h-5 w-5 sm:h-6" />
-              Шаг 3: Предварительный просмотр
+              Шаг 3: Обработка
             </CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Проверьте выбранные файлы перед отправкой на webhook для SKU: {sku}
+              Отправка файлов на обработку для SKU: {sku}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center">
-              <p className="text-base sm:text-lg mb-4">Готовы к отправке на webhook?</p>
+              <p className="text-base sm:text-lg mb-4">Готовы отправить файлы на обработку?</p>
               <div className="bg-gray-50 p-3 sm:p-4 rounded-lg mb-4">
                 <p className="font-medium text-sm sm:text-base">SKU: {sku}</p>
                 <p className="text-sm sm:text-base">Файлов: {files.length}</p>
@@ -398,7 +319,6 @@ export default function HomePage() {
                 disabled={isProcessing}
                 className="flex-1 text-sm sm:text-base px-4 py-2"
               >
-                <Zap className="h-4 w-4 mr-2" />
                 {isProcessing ? 'Обработка...' : 'Отправить'}
               </Button>
               <Button
@@ -413,24 +333,60 @@ export default function HomePage() {
         </Card>
       )}
 
-      <ProcessingQueue
-        items={processingItems}
-        onDownloadZIP={handleDownloadZIP}
-        onSendToTelegram={handleSendToTelegram}
-        links={publicLinks}
-      />
+      {/* Results */}
+      {processingItems.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg sm:text-xl">Результаты обработки</CardTitle>
+            <CardDescription className="text-sm sm:text-base">
+              Найдено {processingItems.filter(item => item.status === 'done').length} обработанных файлов
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {processingItems.map((item, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                  <div>
+                    <p className="font-medium text-sm">{item.originalName}</p>
+                    <p className="text-xs text-gray-500">{item.serverName}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.previewUrl && (
+                      <a
+                        href={item.previewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        Превью
+                      </a>
+                    )}
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      item.status === 'done' ? 'bg-green-100 text-green-800' : 
+                      item.status === 'failed' ? 'bg-red-100 text-red-800' : 
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      <BarcodeScanner
-        open={showScanner}
-        onOpenChange={setShowScanner}
-        onScan={(result) => {
-          handleSkuChange(result)
-          setShowScanner(false)
-          if (result.trim()) {
-            handleNextStep()
-          }
-        }}
-      />
+      {/* Barcode Scanner Modal */}
+      {showScanner && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-md">
+            <BarcodeScanner
+              onBarcodeDetected={handleBarcodeDetected}
+              onClose={handleCloseScanner}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { promises as fs } from 'fs'
 import { join } from 'path'
-import { sendToWebhook, sendFilesToWebhook } from '@/lib/webhook'
-import { createZipArchive } from '@/lib/zip-utils'
-import { sendZipToTelegram } from '@/lib/telegram'
 import { ProcessResult } from '@/types'
 
 interface ProcessingItem {
@@ -12,60 +9,24 @@ interface ProcessingItem {
   originalName: string
   serverName: string
   status: 'queued' | 'processing' | 'done' | 'failed'
-  progress?: number
-  width?: number
-  height?: number
-  bytes?: number
-  previewUrl?: string
   error?: string
 }
 
-// Import shared file storage
-import { processedFiles } from '@/lib/file-storage'
 const processingItems = new Map<string, ProcessingItem>()
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Starting process request...')
-    
-    // Add File polyfill for standalone mode
-    if (typeof File === 'undefined') {
-      (global as any).File = class File extends Blob {
-        constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
-          super(bits, options)
-          this.name = name
-        }
-        name: string
-      }
-      console.log('File polyfill added')
-    }
-
-    const formData = await parseForm(request)
-    console.log('FormData parsed:', {
-      sku: formData.fields.sku?.[0],
-      filesCount: formData.files?.length
-    })
-    
-    const sku = formData.fields.sku?.[0] || ''
-    const files = formData.files || []
+    const formData = await request.formData()
+    const sku = formData.get('sku')?.toString() || ''
+    const files = formData.getAll('files') as File[]
 
     if (!sku.trim()) {
-      console.log('SKU is empty')
-      return NextResponse.json(
-        { error: 'SKU is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'SKU is required' }, { status: 400 })
     }
 
     if (files.length === 0) {
-      console.log('No files provided')
-      return NextResponse.json(
-        { error: 'No files provided' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
-    
-    console.log('Processing files:', files.map(f => f.originalFilename))
 
     // Create temporary directory for this SKU
     const tempDir = join(process.cwd(), 'tmp', sku)
@@ -73,9 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Process files
     const results: ProcessResult[] = []
-    const maxConcurrency = 3 // Limit concurrent processing
-    const processingPromises: Promise<void>[] = []
-
+    
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const serverName = `${sku}_${String(i + 1).padStart(3, '0')}.jpg`
@@ -84,62 +43,46 @@ export async function POST(request: NextRequest) {
       // Create processing item
       const item: ProcessingItem = {
         id: itemId,
-        originalName: file.originalFilename || file.file.name || `file_${i}`,
+        originalName: file.name,
         serverName,
         status: 'queued',
       }
       processingItems.set(itemId, item)
 
-      // Process file with concurrency control
-      const processPromise = processFileWithRetry(
-        file,
-        serverName,
-        tempDir,
-        itemId,
-        sku,
-        results
-      ).catch((error) => {
-        console.error(`Error processing ${file.originalFilename || file.file.name}:`, error)
+      try {
+        // Process file
+        await processFile(file, serverName, tempDir, itemId, sku, results)
+        
+        // Update item status
+        const item = processingItems.get(itemId)
+        if (item) {
+          item.status = 'done'
+        }
+      } catch (error) {
+        console.error(`Error processing ${file.name}:`, error)
         const item = processingItems.get(itemId)
         if (item) {
           item.status = 'failed'
-          item.error = error.message
+          item.error = error instanceof Error ? error.message : 'Unknown error'
         }
-      })
-
-      processingPromises.push(processPromise)
-
-      // Limit concurrency
-      if (processingPromises.length >= maxConcurrency) {
-        await Promise.all(processingPromises.splice(0, maxConcurrency))
       }
     }
 
-    // Wait for remaining processing
-    await Promise.all(processingPromises)
-
-    // Send all files to webhook in a single request
+    // Send all files to webhook
     const webhookUrl = process.env.WEBHOOK_URL
-    console.log('Webhook URL:', webhookUrl)
     if (webhookUrl && results.length > 0) {
-      console.log('About to call sendAllFilesToWebhook with', results.length, 'files')
       try {
         const processedImageUrls = await sendAllFilesToWebhook(results, webhookUrl, sku)
-        console.log('Received processedImageUrls:', processedImageUrls)
         
-        // Update results with webhook URLs (dataUrls)
+        // Update results with webhook URLs
         for (let i = 0; i < results.length; i++) {
           if (processedImageUrls[i]) {
             results[i].previewUrl = processedImageUrls[i]
           }
         }
-        
-        console.log(`Updated ${results.length} results with webhook URLs`)
       } catch (webhookError) {
-        console.error('Error sending all files to webhook:', webhookError)
+        console.error('Error sending files to webhook:', webhookError)
       }
-    } else {
-      console.log('Skipping webhook call - no URL or no results')
     }
 
     return NextResponse.json({
@@ -155,160 +98,38 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function parseForm(request: NextRequest) {
-  try {
-    const formData = await request.formData()
-    console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
-      key,
-      type: typeof value,
-      size: value instanceof File ? value.size : 'N/A',
-      name: value instanceof File ? value.name : 'N/A'
-    })))
-    
-    const fields: Record<string, string[]> = {}
-    const files: any[] = []
-
-    for (const [key, value] of formData.entries()) {
-      if (key === 'sku') {
-        fields[key] = [value.toString()]
-        console.log('Found SKU:', value.toString())
-      } else if (key.startsWith('files')) {
-        console.log('Found entry:', { key, type: typeof value, value })
-        // Check if it's a File object
-        if (value && typeof value === 'object' && 'name' in value && 'size' in value && 'type' in value) {
-          console.log('Found file:', { name: (value as any).name, size: (value as any).size, type: (value as any).type })
-          files.push({
-            originalFilename: (value as any).name,
-            filepath: '', // Will be handled differently
-            mimetype: (value as any).type,
-            size: (value as any).size,
-            file: value
-          })
-        } else {
-          console.log('Not a file object:', value)
-        }
-      }
-    }
-
-    console.log('Parsed result:', { sku: fields.sku?.[0], filesCount: files.length })
-    return { fields, files }
-  } catch (error) {
-    console.error('Error parsing form:', error)
-    throw error
-  }
-}
-
-async function processFileWithRetry(
-  file: any,
+async function processFile(
+  file: File,
   serverName: string,
   tempDir: string,
   itemId: string,
   sku: string,
   results: ProcessResult[]
 ): Promise<void> {
-  const maxRetries = 3
-  let retryCount = 0
-
-  while (retryCount < maxRetries) {
-    try {
-      const item = processingItems.get(itemId)
-      if (item) {
-        item.status = 'processing'
-        item.progress = 0
-      }
-
-      // Read file
-      const fileBuffer = Buffer.from(await file.file.arrayBuffer())
-      
-      // Convert all images to JPEG for webhook compatibility
-      let processedBuffer = fileBuffer
-      let contentType = 'image/jpeg'
-      let width = 0
-      let height = 0
-      
-      if (!file.mimetype?.startsWith('image/jpeg')) {
-        try {
-          // Handle HEIC/HEIF files first
-          if (file.mimetype === 'image/heic' || file.mimetype === 'image/heif') {
-            console.log(`Converting HEIC file: ${file.originalFilename}`)
-            // For HEIC files, we'll use a simple approach
-            processedBuffer = fileBuffer
-            contentType = file.mimetype || 'image/jpeg'
-            width = 1920
-            height = 1080
-          } else {
-            // For non-HEIC formats, use simple conversion
-            const imageType = file.mimetype?.split('/')[1] || 'jpeg'
-            if (imageType === 'png' || imageType === 'webp') {
-              processedBuffer = fileBuffer
-              contentType = file.mimetype || 'image/jpeg'
-            } else {
-              throw new Error(`Unsupported format: ${file.mimetype}`)
-            }
-          }
-        } catch (conversionError) {
-          console.error('Conversion error:', conversionError)
-          throw new Error(`Ошибка конвертации файла: ${file.originalFilename || 'unknown'}. Пожалуйста, используйте JPG, PNG, WebP или HEIC форматов.`)
-        }
-      } else {
-        // For JPEG files, use default dimensions
-        width = 1920
-        height = 1080
-      }
-
-      // Save processed file to temp directory
-      const filePath = join(tempDir, serverName)
-      await fs.writeFile(filePath, processedBuffer)
-      console.log(`Saved file to: ${filePath}`)
-
-      // Update progress
-      if (item) {
-        item.progress = 50
-      }
-
-      // Update progress
-      if (item) {
-        item.progress = 90
-      }
-
-      // Update item status
-      if (item) {
-        item.status = 'done'
-        item.width = width
-        item.height = height
-        item.bytes = processedBuffer.length
-        item.previewUrl = `/api/preview/${serverName}`
-      }
-
-      // Add to results
-      const resultItem = {
-        originalName: file.originalFilename || file.file.name || `file_${itemId}`,
-        serverName,
-        width,
-        height,
-        bytes: processedBuffer.length,
-        previewUrl: `/api/preview/${serverName}`,
-        bufferId: undefined
-      }
-      console.log(`Adding to results:`, { serverName: resultItem.serverName, previewUrl: resultItem.previewUrl })
-      results.push(resultItem)
-
-      return
-    } catch (error) {
-      retryCount++
-      console.error(`Retry ${retryCount} for ${file.originalFilename || file.file.name}:`, error)
-      
-      if (retryCount >= maxRetries) {
-        throw error
-      }
-      
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, 1000 * retryCount))
-    }
+  const item = processingItems.get(itemId)
+  if (item) {
+    item.status = 'processing'
   }
+
+  // Read file
+  const fileBuffer = Buffer.from(await file.arrayBuffer())
+  
+  // Save processed file to temp directory
+  const filePath = join(tempDir, serverName)
+  await fs.writeFile(filePath, fileBuffer)
+
+  // Add to results
+  const resultItem: ProcessResult = {
+    originalName: file.name,
+    serverName,
+    width: 1920,
+    height: 1080,
+    bytes: fileBuffer.length,
+    previewUrl: '', // Will be updated later with webhook response
+  }
+  results.push(resultItem)
 }
 
-// Send all files to webhook in a single request
 async function sendAllFilesToWebhook(
   processedResults: ProcessResult[],
   webhookUrl: string,
@@ -317,8 +138,6 @@ async function sendAllFilesToWebhook(
   const processedImageUrls: string[] = []
   
   try {
-    console.log(`Sending ${processedResults.length} files to webhook in single request`)
-    
     // Create FormData for multiple files
     const formData = new FormData()
     
@@ -328,145 +147,65 @@ async function sendAllFilesToWebhook(
       const fileBuffer = await getFileBuffer(result.serverName, sku)
       
       if (fileBuffer) {
-        // Use serverName (renamed file) instead of original filename
         const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'image/jpeg' })
         formData.append(`files[${i}]`, blob, result.serverName)
-        console.log(`Added file ${i}:`, result.serverName)
       }
     }
     
     // Send all files in one request
-    console.log('Sending request to webhook:', webhookUrl)
     const response = await fetch(webhookUrl, {
       method: 'POST',
       body: formData,
     })
-    
-    console.log('Webhook response status:', response.status, response.statusText)
     
     if (!response.ok) {
       throw new Error(`Webhook request failed with status ${response.status}: ${response.statusText}`)
     }
     
     // Try to parse the response
-    try {
-      const contentType = response.headers.get('content-type')
-      console.log('Response content-type:', contentType)
+    const contentType = response.headers.get('content-type')
+    
+    if (contentType && contentType.includes('application/json')) {
+      const responseData = await response.json()
       
-      if (contentType && contentType.includes('application/json')) {
-        const responseData = await response.json()
-        console.log('Webhook response JSON:', responseData)
-        
-        // Handle array of URLs or single URL
-        if (Array.isArray(responseData)) {
-          console.log('Response is an array with length:', responseData.length)
-          // Check if array contains file objects with dataUrl
-          if (responseData.length > 0 && responseData[0].dataUrl) {
-            console.log('Array contains file objects with dataUrl')
-            // Handle array of file objects with dataUrl - return dataUrls directly
-            for (const fileData of responseData) {
-              if (fileData.dataUrl) {
-                const dataUrl = fileData.dataUrl
-                console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
-                processedImageUrls.push(dataUrl)
-              }
-            }
-            console.log('Added dataUrls to processedImageUrls, total:', processedImageUrls.length)
-          } else {
-            console.log('Array contains simple URLs, pushing all URLs')
-            // Handle array of simple URLs
-            processedImageUrls.push(...responseData)
+      // Handle different response formats
+      if (Array.isArray(responseData)) {
+        // Handle array of URLs or file objects with dataUrl
+        for (const item of responseData) {
+          if (item.dataUrl) {
+            processedImageUrls.push(item.dataUrl)
+          } else if (typeof item === 'string') {
+            processedImageUrls.push(item)
           }
-        } else if (responseData.urls) {
-          console.log('Response has urls property')
-          processedImageUrls.push(...responseData.urls)
-        } else if (responseData.url || responseData.imageUrl || responseData.image) {
-          console.log('Response has single URL property')
-          processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
-        } else if (responseData.dataUrl) {
-          console.log('Response has single dataUrl property')
-          // Handle single dataUrl format from webhook - return dataUrl directly
-          const dataUrl = responseData.dataUrl
-          console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
-          processedImageUrls.push(dataUrl)
-          console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
-        } else if (responseData.files && Array.isArray(responseData.files)) {
-          console.log('Response has files array with dataUrl')
-          // Handle files array with dataUrl format
-          for (const fileData of responseData.files) {
-            if (fileData.dataUrl) {
-              const dataUrl = fileData.dataUrl
-              console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
-              processedImageUrls.push(dataUrl)
-            }
-          }
-          console.log('Added dataUrls from files array to processedImageUrls, total:', processedImageUrls.length)
         }
-      } else if (contentType && contentType.includes('text')) {
-        const responseData = await response.text()
-        console.log('Response text:', responseData)
-        
-        // Check if response is HTML error page or contains [object Object]
-        if ((responseData.includes('<') && responseData.includes('>')) || responseData.includes('[object Object]')) {
-          console.log('Received HTML error page or [object Object] instead of JSON')
-          // Use fallback - return local preview URLs
-          for (let i = 0; i < processedResults.length; i++) {
-            processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
-          }
-        } else if (responseData && responseData.startsWith('http')) {
-          processedImageUrls.push(responseData.trim())
-        }
-      } else {
-        // For binary response, create data URLs for each file
-        console.log('Received binary response from webhook')
-        try {
-          const arrayBuffer = await response.arrayBuffer()
-          const base64 = Buffer.from(arrayBuffer).toString('base64')
-          const mimeType = contentType || 'image/jpeg'
-          processedImageUrls.push(`data:${mimeType};base64,${base64}`)
-        } catch (error) {
-          console.error('Error creating data URL:', error)
-        }
+      } else if (responseData.dataUrl) {
+        processedImageUrls.push(responseData.dataUrl)
+      } else if (responseData.urls) {
+        processedImageUrls.push(...responseData.urls)
+      } else if (responseData.url || responseData.imageUrl || responseData.image) {
+        processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
       }
-    } catch (responseError) {
-      console.log('Could not parse webhook response, using webhook URL as fallback')
-      processedImageUrls.push(webhookUrl)
+    } else if (contentType && contentType.includes('text')) {
+      const responseData = await response.text()
+      if (responseData && responseData.startsWith('http')) {
+        processedImageUrls.push(responseData.trim())
+      }
     }
     
-    console.log(`Successfully sent ${processedResults.length} files to webhook`)
     return processedImageUrls
-    
   } catch (error) {
     console.error('Webhook send error:', error)
     return processedImageUrls
   }
 }
 
-// Helper function to get file buffer
 async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | null> {
   try {
-    // First try to read from temp directory with SKU path
     const tempDir = join(process.cwd(), 'tmp', sku)
     const filePath = join(tempDir, serverName)
     
-    try {
-      console.log(`Trying to read file: ${filePath}`)
-      const fileBuffer = await fs.readFile(filePath)
-      console.log(`Successfully read file: ${filePath}, size: ${fileBuffer.length}`)
-      return fileBuffer
-    } catch (readError) {
-      console.log(`Could not read file from temp directory: ${filePath}`, readError)
-    }
-    
-    // If not in temp directory, try to get from file storage
-    const buffer = processedFiles.get(serverName)
-    if (buffer) {
-      console.log(`Found file in storage: ${serverName}, size: ${buffer.length}`)
-      return buffer as Buffer
-    }
-    
-    console.log(`File not found in either location: ${serverName}`)
-    return null
+    const fileBuffer = await fs.readFile(filePath)
+    return fileBuffer
   } catch (error) {
     console.error('Error getting file buffer:', error)
     return null
@@ -474,43 +213,6 @@ async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | 
 }
 
 export async function GET() {
-  // Return current processing status
   const items = Array.from(processingItems.values())
   return NextResponse.json({ items })
-}
-
-// Helper function to automatically create ZIP and send to Telegram
-async function autoCreateZipAndSendToTelegram(
-  processedResults: ProcessResult[],
-  sku: string
-): Promise<void> {
-  if (processedResults.length === 0) return
-
-  try {
-    // Generate ZIP filename
-    const now = new Date()
-    const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '')
-    const zipFileName = `${sku}_${timestamp}.zip`
-
-    // Create ZIP archive
-    const zipBuffer = await createZipArchive(processedResults, zipFileName)
-
-    // Send to Telegram
-    const telegramConfig = {
-      botToken: process.env.TELEGRAM_BOT_TOKEN!,
-      chatId: process.env.TELEGRAM_CHAT_ID!,
-    }
-
-    await sendZipToTelegram(
-      zipBuffer,
-      zipFileName,
-      processedResults.map(result => result.previewUrl).filter(Boolean),
-      telegramConfig
-    )
-
-    console.log(`Auto-sent ZIP to Telegram: ${zipFileName}`)
-  } catch (error) {
-    console.error('Auto ZIP and Telegram error:', error)
-    // Don't fail the entire processing if auto-send fails
-  }
 }
