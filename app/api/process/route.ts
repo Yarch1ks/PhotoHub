@@ -120,11 +120,14 @@ export async function POST(request: NextRequest) {
 
     // Send all files to webhook in a single request
     const webhookUrl = process.env.WEBHOOK_URL
+    console.log('Webhook URL:', webhookUrl)
     if (webhookUrl && results.length > 0) {
+      console.log('About to call sendAllFilesToWebhook with', results.length, 'files')
       try {
         const processedImageUrls = await sendAllFilesToWebhook(results, webhookUrl, sku)
+        console.log('Received processedImageUrls:', processedImageUrls)
         
-        // Update results with webhook URLs
+        // Update results with webhook URLs (dataUrls)
         for (let i = 0; i < results.length; i++) {
           if (processedImageUrls[i]) {
             results[i].previewUrl = processedImageUrls[i]
@@ -135,6 +138,8 @@ export async function POST(request: NextRequest) {
       } catch (webhookError) {
         console.error('Error sending all files to webhook:', webhookError)
       }
+    } else {
+      console.log('Skipping webhook call - no URL or no results')
     }
 
     return NextResponse.json({
@@ -331,10 +336,13 @@ async function sendAllFilesToWebhook(
     }
     
     // Send all files in one request
+    console.log('Sending request to webhook:', webhookUrl)
     const response = await fetch(webhookUrl, {
       method: 'POST',
       body: formData,
     })
+    
+    console.log('Webhook response status:', response.status, response.statusText)
     
     if (!response.ok) {
       throw new Error(`Webhook request failed with status ${response.status}: ${response.statusText}`)
@@ -354,38 +362,15 @@ async function sendAllFilesToWebhook(
           // Check if array contains file objects with dataUrl
           if (responseData.length > 0 && responseData[0].dataUrl) {
             console.log('Array contains file objects with dataUrl')
-            // Handle array of file objects with dataUrl
+            // Handle array of file objects with dataUrl - return dataUrls directly
             for (const fileData of responseData) {
               if (fileData.dataUrl) {
                 const dataUrl = fileData.dataUrl
                 console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
-                
-                // Extract base64 data from dataUrl
-                const base64Data = dataUrl.split(',')[1]
-                if (base64Data) {
-                  const binaryData = Buffer.from(base64Data, 'base64')
-                  console.log('Extracted binary data, size:', binaryData.length)
-                  
-                  // Store binary data in processedFiles for each file
-                  for (let i = 0; i < processedResults.length; i++) {
-                    const result = processedResults[i]
-                    processedFiles.set(result.serverName, binaryData)
-                    console.log(`Stored binary data for preview: ${result.serverName}`)
-                  }
-                  
-                  // Use the dataUrl as the preview URL for all files
-                  for (let i = 0; i < processedResults.length; i++) {
-                    processedImageUrls.push(dataUrl)
-                  }
-                  console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
-                } else {
-                  console.error('Invalid dataUrl format')
-                  for (let i = 0; i < processedResults.length; i++) {
-                    processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
-                  }
-                }
+                processedImageUrls.push(dataUrl)
               }
             }
+            console.log('Added dataUrls to processedImageUrls, total:', processedImageUrls.length)
           } else {
             console.log('Array contains simple URLs, pushing all URLs')
             // Handle array of simple URLs
@@ -399,34 +384,11 @@ async function sendAllFilesToWebhook(
           processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
         } else if (responseData.dataUrl) {
           console.log('Response has single dataUrl property')
-          // Handle single dataUrl format from webhook - convert to binary and store
+          // Handle single dataUrl format from webhook - return dataUrl directly
           const dataUrl = responseData.dataUrl
           console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
-          
-          // Extract base64 data from dataUrl
-          const base64Data = dataUrl.split(',')[1]
-          if (base64Data) {
-            const binaryData = Buffer.from(base64Data, 'base64')
-            console.log('Extracted binary data, size:', binaryData.length)
-            
-            // Store binary data in processedFiles for each file
-            for (let i = 0; i < processedResults.length; i++) {
-              const result = processedResults[i]
-              processedFiles.set(result.serverName, binaryData)
-              console.log(`Stored binary data for preview: ${result.serverName}`)
-            }
-            
-            // Use the dataUrl as the preview URL for all files
-            for (let i = 0; i < processedResults.length; i++) {
-              processedImageUrls.push(dataUrl)
-            }
-            console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
-          } else {
-            console.error('Invalid dataUrl format')
-            for (let i = 0; i < processedResults.length; i++) {
-              processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
-            }
-          }
+          processedImageUrls.push(dataUrl)
+          console.log('Added dataUrl to processedImageUrls, total:', processedImageUrls.length)
         }
       } else if (contentType && contentType.includes('text')) {
         const responseData = await response.text()
