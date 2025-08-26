@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     const webhookUrl = process.env.WEBHOOK_URL
     if (webhookUrl && results.length > 0) {
       try {
-        const processedImageUrls = await sendAllFilesToWebhook(results, webhookUrl)
+        const processedImageUrls = await sendAllFilesToWebhook(results, webhookUrl, sku)
         
         // Update results with webhook URLs
         for (let i = 0; i < results.length; i++) {
@@ -306,7 +306,8 @@ async function processFileWithRetry(
 // Send all files to webhook in a single request
 async function sendAllFilesToWebhook(
   processedResults: ProcessResult[],
-  webhookUrl: string
+  webhookUrl: string,
+  sku: string
 ): Promise<string[]> {
   const processedImageUrls: string[] = []
   
@@ -319,7 +320,7 @@ async function sendAllFilesToWebhook(
     // Add each file to FormData
     for (let i = 0; i < processedResults.length; i++) {
       const result = processedResults[i]
-      const fileBuffer = await getFileBuffer(result.serverName)
+      const fileBuffer = await getFileBuffer(result.serverName, sku)
       
       if (fileBuffer) {
         const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'image/jpeg' })
@@ -384,7 +385,7 @@ async function sendAllFilesToWebhook(
 }
 
 // Helper function to get file buffer
-async function getFileBuffer(serverName: string): Promise<Buffer | null> {
+async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | null> {
   try {
     // Try to get from file storage first
     const buffer = processedFiles.get(serverName)
@@ -393,7 +394,7 @@ async function getFileBuffer(serverName: string): Promise<Buffer | null> {
     }
     
     // If not in storage, try to read from temp directory with SKU path
-    const tempDir = join(process.cwd(), 'tmp')
+    const tempDir = join(process.cwd(), 'tmp', sku)
     const filePath = join(tempDir, serverName)
     
     try {
