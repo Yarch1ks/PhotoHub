@@ -218,18 +218,22 @@ async function sendAllFilesToWebhook(
       
       // Сохраняем успешный ответ в логи
       try {
-        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/webhook-logs`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            status: response.status,
-            headers: Object.fromEntries(response.headers.entries()),
-            body: '', // responseText недоступен в этой области видимости
-            error: null
-          }),
-        })
+        // Используем переменную окружения для URL логирования
+        const logBaseUrl = process.env.WEBHOOK_LOG_URL || process.env.NEXT_PUBLIC_BASE_URL
+        if (logBaseUrl) {
+          await fetch(`${logBaseUrl}/api/webhook-logs`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              status: response.status,
+              headers: Object.fromEntries(response.headers.entries()),
+              body: '', // responseText недоступен в этой области видимости
+              error: null
+            }),
+          })
+        }
       } catch (logError) {
         console.error('Failed to save webhook log:', logError)
       }
@@ -240,18 +244,22 @@ async function sendAllFilesToWebhook(
     
     // Сохраняем ошибку в логи
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/webhook-logs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status: 0,
-          headers: {},
-          body: '',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        }),
-      })
+      // Используем переменную окружения для URL логирования
+      const logBaseUrl = process.env.WEBHOOK_LOG_URL || process.env.NEXT_PUBLIC_BASE_URL
+      if (logBaseUrl) {
+        await fetch(`${logBaseUrl}/api/webhook-logs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 0,
+            headers: {},
+            body: '',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }),
+        })
+      }
     } catch (logError) {
       console.error('Failed to save webhook log:', logError)
     }

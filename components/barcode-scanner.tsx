@@ -66,19 +66,11 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
   const handleBarcodeDetected = (barcode: string) => {
     setDetectedBarcode(barcode)
     onBarcodeDetected(barcode)
-    stopScanning()
     
     toast({
       title: 'Штрихкод обнаружен',
       description: `Найден штрихкод: ${barcode}`,
     })
-  }
-
-  // Симуляция сканирования для тестирования
-  const simulateBarcodeDetection = () => {
-    const testBarcodes = ['123456789', '987654321', '555555555']
-    const randomBarcode = testBarcodes[Math.floor(Math.random() * testBarcodes.length)]
-    handleBarcodeDetected(randomBarcode)
   }
 
   const handleUseDetectedBarcode = () => {
@@ -251,16 +243,6 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
             </Button>
           )}
         </div>
-
-        {/* Кнопка для тестирования симуляции сканирования */}
-        <Button
-          onClick={simulateBarcodeDetection}
-          variant="outline"
-          className="w-full"
-          disabled={!isScanning}
-        >
-          🧪 Симулировать сканирование
-        </Button>
 
         {onClose && (
           <Button
