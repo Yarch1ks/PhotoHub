@@ -13,7 +13,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Build the application with standalone output
-RUN npm run build && npx next build --standalone
+RUN npm run build
 
 # Production stage
 FROM node:18-alpine AS runner
