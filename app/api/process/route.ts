@@ -119,6 +119,25 @@ export async function POST(request: NextRequest) {
     // Wait for remaining processing
     await Promise.all(processingPromises)
 
+    // Send all files to webhook in a single request
+    const webhookUrl = process.env.WEBHOOK_URL
+    if (webhookUrl && results.length > 0) {
+      try {
+        const processedImageUrls = await sendAllFilesToWebhook(results, webhookUrl)
+        
+        // Update results with webhook URLs
+        for (let i = 0; i < results.length; i++) {
+          if (processedImageUrls[i]) {
+            results[i].previewUrl = processedImageUrls[i]
+          }
+        }
+        
+        console.log(`Updated ${results.length} results with webhook URLs`)
+      } catch (webhookError) {
+        console.error('Error sending all files to webhook:', webhookError)
+      }
+    }
+
     return NextResponse.json({
       sku,
       items: results,
@@ -361,6 +380,111 @@ async function processFileWithRetry(
       // Wait before retry
       await new Promise(resolve => setTimeout(resolve, 1000 * retryCount))
     }
+  }
+}
+
+// Send all files to webhook in a single request
+async function sendAllFilesToWebhook(
+  processedResults: ProcessResult[],
+  webhookUrl: string
+): Promise<string[]> {
+  const processedImageUrls: string[] = []
+  
+  try {
+    console.log(`Sending ${processedResults.length} files to webhook in single request`)
+    
+    // Create FormData for multiple files
+    const formData = new FormData()
+    
+    // Add each file to FormData
+    for (let i = 0; i < processedResults.length; i++) {
+      const result = processedResults[i]
+      const fileBuffer = await getFileBuffer(result.serverName)
+      
+      if (fileBuffer) {
+        const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'image/jpeg' })
+        formData.append(`files[${i}]`, blob, result.originalName)
+        console.log(`Added file ${i}:`, result.originalName)
+      }
+    }
+    
+    // Send all files in one request
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Webhook request failed with status ${response.status}: ${response.statusText}`)
+    }
+    
+    // Try to parse the response
+    try {
+      const contentType = response.headers.get('content-type')
+      
+      if (contentType && contentType.includes('application/json')) {
+        const responseData = await response.json()
+        // Handle array of URLs or single URL
+        if (Array.isArray(responseData)) {
+          processedImageUrls.push(...responseData)
+        } else if (responseData.urls) {
+          processedImageUrls.push(...responseData.urls)
+        } else if (responseData.url || responseData.imageUrl || responseData.image) {
+          processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
+        }
+      } else if (contentType && contentType.includes('text')) {
+        const responseData = await response.text()
+        if (responseData && responseData.startsWith('http')) {
+          processedImageUrls.push(responseData.trim())
+        }
+      } else {
+        // For binary response, create data URLs for each file
+        console.log('Received binary response from webhook')
+        try {
+          const arrayBuffer = await response.arrayBuffer()
+          const base64 = Buffer.from(arrayBuffer).toString('base64')
+          const mimeType = contentType || 'image/jpeg'
+          processedImageUrls.push(`data:${mimeType};base64,${base64}`)
+        } catch (error) {
+          console.error('Error creating data URL:', error)
+        }
+      }
+    } catch (responseError) {
+      console.log('Could not parse webhook response, using webhook URL as fallback')
+      processedImageUrls.push(webhookUrl)
+    }
+    
+    console.log(`Successfully sent ${processedResults.length} files to webhook`)
+    return processedImageUrls
+    
+  } catch (error) {
+    console.error('Webhook send error:', error)
+    return processedImageUrls
+  }
+}
+
+// Helper function to get file buffer
+async function getFileBuffer(serverName: string): Promise<Buffer | null> {
+  try {
+    // Try to get from file storage first
+    const buffer = processedFiles.get(serverName)
+    if (buffer) {
+      return buffer as Buffer
+    }
+    
+    // If not in storage, try to read from temp directory
+    const tempDir = join(process.cwd(), 'tmp')
+    const filePath = join(tempDir, serverName)
+    
+    try {
+      return await fs.readFile(filePath)
+    } catch (readError) {
+      console.error(`Could not read file: ${filePath}`)
+      return null
+    }
+  } catch (error) {
+    console.error('Error getting file buffer:', error)
+    return null
   }
 }
 
