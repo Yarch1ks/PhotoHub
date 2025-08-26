@@ -27,6 +27,8 @@ const processingItems = new Map<string, ProcessingItem>()
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Starting process request...')
+    
     // Add File polyfill for standalone mode
     if (typeof File === 'undefined') {
       (global as any).File = class File extends Blob {
@@ -36,13 +38,20 @@ export async function POST(request: NextRequest) {
         }
         name: string
       }
+      console.log('File polyfill added')
     }
 
     const formData = await parseForm(request)
+    console.log('FormData parsed:', {
+      sku: formData.fields.sku?.[0],
+      filesCount: formData.files?.length
+    })
+    
     const sku = formData.fields.sku?.[0] || ''
     const files = formData.files || []
 
     if (!sku.trim()) {
+      console.log('SKU is empty')
       return NextResponse.json(
         { error: 'SKU is required' },
         { status: 400 }
@@ -50,11 +59,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (files.length === 0) {
+      console.log('No files provided')
       return NextResponse.json(
         { error: 'No files provided' },
         { status: 400 }
       )
     }
+    
+    console.log('Processing files:', files.map(f => f.originalFilename))
 
     // Create temporary directory for this SKU
     const tempDir = join(process.cwd(), 'tmp', sku)
