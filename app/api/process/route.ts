@@ -149,15 +149,21 @@ async function parseForm(request: NextRequest) {
       if (key === 'sku') {
         fields[key] = [value.toString()]
         console.log('Found SKU:', value.toString())
-      } else if (key.startsWith('files') && value instanceof File) {
-        console.log('Found file:', { name: value.name, size: value.size, type: value.type })
-        files.push({
-          originalFilename: value.name,
-          filepath: '', // Will be handled differently
-          mimetype: value.type,
-          size: value.size,
-          file: value
-        })
+      } else if (key.startsWith('files')) {
+        console.log('Found entry:', { key, type: typeof value, value })
+        // Check if it's a File object
+        if (value && typeof value === 'object' && 'name' in value && 'size' in value && 'type' in value) {
+          console.log('Found file:', { name: (value as any).name, size: (value as any).size, type: (value as any).type })
+          files.push({
+            originalFilename: (value as any).name,
+            filepath: '', // Will be handled differently
+            mimetype: (value as any).type,
+            size: (value as any).size,
+            file: value
+          })
+        } else {
+          console.log('Not a file object:', value)
+        }
       }
     }
 
