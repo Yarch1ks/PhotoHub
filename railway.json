@@ -6,12 +6,17 @@
   "deploy": {
     "startCommand": "npm start",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 3,
+    "healthcheckPath": "/api/health"
   },
   "env": [
     {
       "key": "NODE_ENV",
       "value": "production"
+    },
+    {
+      "key": "WEBHOOK_URL",
+      "value": "${{WEBHOOK_URL}}"
     },
     {
       "key": "PHOTOROOM_API_KEY",
