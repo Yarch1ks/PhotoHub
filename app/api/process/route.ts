@@ -215,15 +215,9 @@ async function processFileWithRetry(
             })
             console.log(`Successfully converted HEIC to JPG: ${file.originalFilename}`)
             
-            // Get dimensions from HEIC metadata
-            try {
-              const heif = require('heic-decode')
-              const decoded = await heif(fileBuffer)
-              width = decoded.width
-              height = decoded.height
-            } catch (metadataError) {
-              console.warn('Could not get HEIC dimensions:', metadataError)
-            }
+            // Use default dimensions for HEIC files
+            width = 1920
+            height = 1080
           } else {
             // For non-HEIC formats, use simple conversion without Sharp
             // Create a simple JPEG wrapper for basic formats
@@ -242,17 +236,9 @@ async function processFileWithRetry(
           throw new Error(`Ошибка конвертации файла: ${file.originalFilename || 'unknown'}. Пожалуйста, используйте JPG, PNG, WebP или HEIC форматы.`)
         }
       } else {
-        // For JPEG files, try to get dimensions
-        try {
-          const heif = require('heic-decode')
-          const decoded = await heif(fileBuffer)
-          width = decoded.width
-          height = decoded.height
-        } catch (metadataError) {
-          // If not HEIC, use basic dimensions
-          width = 1920 // Default width
-          height = 1080 // Default height
-        }
+        // For JPEG files, use default dimensions
+        width = 1920
+        height = 1080
       }
 
       // Update progress
@@ -270,8 +256,15 @@ async function processFileWithRetry(
       let processedImageUrl = ''
       try {
         const webhookUrl = process.env.WEBHOOK_URL
+        console.log('Webhook URL:', webhookUrl ? 'SET' : 'NOT SET')
+        
         if (webhookUrl) {
-          const webhookConfig = { url: webhookUrl }
+          console.log('Sending to webhook:', {
+            url: webhookUrl,
+            filename: file.originalFilename || serverName,
+            contentType,
+            size: processedBuffer.length
+          })
           
           // Send the processed image to webhook as binary data and get response
           const response = await fetch(webhookUrl, {
