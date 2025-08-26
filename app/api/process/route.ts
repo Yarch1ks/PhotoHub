@@ -392,14 +392,17 @@ async function getFileBuffer(serverName: string): Promise<Buffer | null> {
       return buffer as Buffer
     }
     
-    // If not in storage, try to read from temp directory
+    // If not in storage, try to read from temp directory with SKU path
     const tempDir = join(process.cwd(), 'tmp')
     const filePath = join(tempDir, serverName)
     
     try {
-      return await fs.readFile(filePath)
+      console.log(`Trying to read file: ${filePath}`)
+      const fileBuffer = await fs.readFile(filePath)
+      console.log(`Successfully read file: ${filePath}, size: ${fileBuffer.length}`)
+      return fileBuffer
     } catch (readError) {
-      console.error(`Could not read file: ${filePath}`)
+      console.error(`Could not read file: ${filePath}`, readError)
       return null
     }
   } catch (error) {
