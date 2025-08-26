@@ -351,6 +351,7 @@ async function sendAllFilesToWebhook(
     // Try to parse the response
     try {
       const contentType = response.headers.get('content-type')
+      console.log('Response content-type:', contentType)
       
       if (contentType && contentType.includes('application/json')) {
         const responseData = await response.json()
@@ -392,6 +393,7 @@ async function sendAllFilesToWebhook(
         }
       } else if (contentType && contentType.includes('text')) {
         const responseData = await response.text()
+        console.log('Response text:', responseData)
         if (responseData && responseData.startsWith('http')) {
           processedImageUrls.push(responseData.trim())
         }
