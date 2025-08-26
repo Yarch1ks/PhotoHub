@@ -350,13 +350,48 @@ async function sendAllFilesToWebhook(
         
         // Handle array of URLs or single URL
         if (Array.isArray(responseData)) {
-          processedImageUrls.push(...responseData)
+          // Check if array contains file objects with dataUrl
+          if (responseData.length > 0 && responseData[0].dataUrl) {
+            // Handle array of file objects with dataUrl
+            for (const fileData of responseData) {
+              if (fileData.dataUrl) {
+                const dataUrl = fileData.dataUrl
+                console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
+                
+                // Extract base64 data from dataUrl
+                const base64Data = dataUrl.split(',')[1]
+                if (base64Data) {
+                  const binaryData = Buffer.from(base64Data, 'base64')
+                  
+                  // Store binary data in processedFiles for each file
+                  for (let i = 0; i < processedResults.length; i++) {
+                    const result = processedResults[i]
+                    processedFiles.set(result.serverName, binaryData)
+                    console.log(`Stored binary data for preview: ${result.serverName}`)
+                  }
+                  
+                  // Use the dataUrl as the preview URL for all files
+                  for (let i = 0; i < processedResults.length; i++) {
+                    processedImageUrls.push(dataUrl)
+                  }
+                } else {
+                  console.error('Invalid dataUrl format')
+                  for (let i = 0; i < processedResults.length; i++) {
+                    processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
+                  }
+                }
+              }
+            }
+          } else {
+            // Handle array of simple URLs
+            processedImageUrls.push(...responseData)
+          }
         } else if (responseData.urls) {
           processedImageUrls.push(...responseData.urls)
         } else if (responseData.url || responseData.imageUrl || responseData.image) {
           processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
         } else if (responseData.dataUrl) {
-          // Handle dataUrl format from webhook - convert to binary and store
+          // Handle single dataUrl format from webhook - convert to binary and store
           const dataUrl = responseData.dataUrl
           console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
           
@@ -417,14 +452,7 @@ async function sendAllFilesToWebhook(
 // Helper function to get file buffer
 async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | null> {
   try {
-    // Try to get from file storage first
-    const buffer = processedFiles.get(serverName)
-    if (buffer) {
-      console.log(`Found file in storage: ${serverName}, size: ${buffer.length}`)
-      return buffer as Buffer
-    }
-    
-    // If not in storage, try to read from temp directory with SKU path
+    // First try to read from temp directory with SKU path
     const tempDir = join(process.cwd(), 'tmp', sku)
     const filePath = join(tempDir, serverName)
     
@@ -434,9 +462,18 @@ async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | 
       console.log(`Successfully read file: ${filePath}, size: ${fileBuffer.length}`)
       return fileBuffer
     } catch (readError) {
-      console.error(`Could not read file: ${filePath}`, readError)
-      return null
+      console.log(`Could not read file from temp directory: ${filePath}`, readError)
     }
+    
+    // If not in temp directory, try to get from file storage
+    const buffer = processedFiles.get(serverName)
+    if (buffer) {
+      console.log(`Found file in storage: ${serverName}, size: ${buffer.length}`)
+      return buffer as Buffer
+    }
+    
+    console.log(`File not found in either location: ${serverName}`)
+    return null
   } catch (error) {
     console.error('Error getting file buffer:', error)
     return null
