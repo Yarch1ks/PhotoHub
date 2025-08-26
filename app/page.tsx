@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Upload, ArrowRight, Scan } from 'lucide-react'
+import { Upload, ArrowRight, Scan, Loader2 } from 'lucide-react'
 import { FileUploader } from '@/components/file-uploader'
 import { BarcodeScanner } from '@/components/barcode-scanner'
 import { useToast } from '@/hooks/use-toast'
@@ -289,10 +289,17 @@ export default function HomePage() {
               </Button>
               <Button
                 onClick={handleProcess}
-                disabled={files.length === 0}
+                disabled={files.length === 0 || isProcessing}
                 className="flex-1 text-sm sm:text-base px-4 py-2"
               >
-                Отправить →
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Отправка...
+                  </>
+                ) : (
+                  'Отправить →'
+                )}
               </Button>
             </div>
           </CardContent>

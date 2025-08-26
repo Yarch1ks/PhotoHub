@@ -32,12 +32,23 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
       codeReaderRef.current = new BrowserMultiFormatReader()
       
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
       })
       
       console.log('Camera stream obtained:', stream)
       streamRef.current = stream
-      setIsScanning(true)
+      
+      // Даем время для инициализации видео перед отображением
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.onloadedmetadata = () => {
+          setIsScanning(true)
+        }
+      }
       
     } catch (err) {
       console.error('Error accessing camera:', err)
@@ -188,7 +199,11 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
               playsInline
               muted
               className="w-full h-full object-cover"
-              style={{ display: 'block', transform: 'scaleX(-1)' }}
+              style={{
+                display: 'block',
+                transform: 'scaleX(-1)',
+                transition: 'opacity 0.3s ease-in-out'
+              }}
               onLoadedMetadata={() => {
                 console.log('Video element in DOM loaded metadata')
               }}
