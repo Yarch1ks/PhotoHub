@@ -394,7 +394,15 @@ async function sendAllFilesToWebhook(
       } else if (contentType && contentType.includes('text')) {
         const responseData = await response.text()
         console.log('Response text:', responseData)
-        if (responseData && responseData.startsWith('http')) {
+        
+        // Check if response is HTML error page
+        if (responseData.includes('<') && responseData.includes('>')) {
+          console.log('Received HTML error page instead of JSON')
+          // Use fallback - return local preview URLs
+          for (let i = 0; i < processedResults.length; i++) {
+            processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
+          }
+        } else if (responseData && responseData.startsWith('http')) {
           processedImageUrls.push(responseData.trim())
         }
       } else {
