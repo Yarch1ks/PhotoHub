@@ -346,6 +346,8 @@ async function sendAllFilesToWebhook(
       
       if (contentType && contentType.includes('application/json')) {
         const responseData = await response.json()
+        console.log('Webhook response JSON:', responseData)
+        
         // Handle array of URLs or single URL
         if (Array.isArray(responseData)) {
           processedImageUrls.push(...responseData)
@@ -353,6 +355,33 @@ async function sendAllFilesToWebhook(
           processedImageUrls.push(...responseData.urls)
         } else if (responseData.url || responseData.imageUrl || responseData.image) {
           processedImageUrls.push(responseData.url || responseData.imageUrl || responseData.image)
+        } else if (responseData.dataUrl) {
+          // Handle dataUrl format from webhook - convert to binary and store
+          const dataUrl = responseData.dataUrl
+          console.log('Received dataUrl from webhook:', dataUrl.substring(0, 100) + '...')
+          
+          // Extract base64 data from dataUrl
+          const base64Data = dataUrl.split(',')[1]
+          if (base64Data) {
+            const binaryData = Buffer.from(base64Data, 'base64')
+            
+            // Store binary data in processedFiles for each file
+            for (let i = 0; i < processedResults.length; i++) {
+              const result = processedResults[i]
+              processedFiles.set(result.serverName, binaryData)
+              console.log(`Stored binary data for preview: ${result.serverName}`)
+            }
+            
+            // Use the dataUrl as the preview URL for all files
+            for (let i = 0; i < processedResults.length; i++) {
+              processedImageUrls.push(dataUrl)
+            }
+          } else {
+            console.error('Invalid dataUrl format')
+            for (let i = 0; i < processedResults.length; i++) {
+              processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
+            }
+          }
         }
       } else if (contentType && contentType.includes('text')) {
         const responseData = await response.text()
@@ -391,6 +420,7 @@ async function getFileBuffer(serverName: string, sku: string): Promise<Buffer | 
     // Try to get from file storage first
     const buffer = processedFiles.get(serverName)
     if (buffer) {
+      console.log(`Found file in storage: ${serverName}, size: ${buffer.length}`)
       return buffer as Buffer
     }
     
