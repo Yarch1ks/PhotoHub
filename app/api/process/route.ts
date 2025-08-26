@@ -395,9 +395,9 @@ async function sendAllFilesToWebhook(
         const responseData = await response.text()
         console.log('Response text:', responseData)
         
-        // Check if response is HTML error page
-        if (responseData.includes('<') && responseData.includes('>')) {
-          console.log('Received HTML error page instead of JSON')
+        // Check if response is HTML error page or contains [object Object]
+        if ((responseData.includes('<') && responseData.includes('>')) || responseData.includes('[object Object]')) {
+          console.log('Received HTML error page or [object Object] instead of JSON')
           // Use fallback - return local preview URLs
           for (let i = 0; i < processedResults.length; i++) {
             processedImageUrls.push(`/api/preview/${processedResults[i]?.serverName}`)
