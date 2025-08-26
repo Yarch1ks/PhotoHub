@@ -1,0 +1,61 @@
+{
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  },
+  "env": [
+    {
+      "key": "NODE_ENV",
+      "value": "production"
+    },
+    {
+      "key": "PHOTOROOM_API_KEY",
+      "value": "${{PHOTOROOM_API_KEY}}"
+    },
+    {
+      "key": "PHOTOROOM_API_URL",
+      "value": "https://image-api.photoroom.com/v2/edit"
+    },
+    {
+      "key": "FTP_HOST",
+      "value": "${{FTP_HOST}}"
+    },
+    {
+      "key": "FTP_USER",
+      "value": "${{FTP_USER}}"
+    },
+    {
+      "key": "FTP_PASSWORD",
+      "value": "${{FTP_PASSWORD}}"
+    },
+    {
+      "key": "FTP_BASE_DIR",
+      "value": "tmp"
+    },
+    {
+      "key": "PUBLIC_CDN_ORIGIN",
+      "value": "https://mzilla.info"
+    },
+    {
+      "key": "TELEGRAM_BOT_TOKEN",
+      "value": "${{TELEGRAM_BOT_TOKEN}}"
+    },
+    {
+      "key": "TELEGRAM_CHAT_ID",
+      "value": "${{TELEGRAM_CHAT_ID}}"
+    },
+    {
+      "key": "NEXT_PUBLIC_MAX_UPLOADS",
+      "value": "30"
+    },
+    {
+      "key": "NEXT_PUBLIC_MAX_FILE_MB",
+      "value": "30"
+    }
+  ]
+}
