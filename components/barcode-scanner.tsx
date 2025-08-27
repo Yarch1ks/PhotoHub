@@ -19,12 +19,16 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
+  const isScanningRef = useRef(false)
   const { toast } = useToast()
 
   const startScanning = async () => {
+    if (isScanningRef.current) return
+    
     try {
       setError(null)
       setDetectedBarcode(null)
+      isScanningRef.current = true
       
       console.log('Starting camera access...')
       
@@ -58,6 +62,7 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
         description: 'Не удалось доступиться к камере. Пожалуйста, убедитесь, что вы предоставили разрешение.',
         variant: 'destructive',
       })
+      isScanningRef.current = false
     }
   }
 
@@ -70,6 +75,7 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
       codeReaderRef.current.reset()
       codeReaderRef.current = null
     }
+    isScanningRef.current = false
     setIsScanning(false)
     setDetectedBarcode(null)
   }
@@ -104,53 +110,71 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
 
   // Эффект для обработки установки потока после монтирования
   useEffect(() => {
-    console.log('useEffect triggered, isScanning:', isScanning)
-    console.log('videoRef.current:', videoRef.current)
-    console.log('streamRef.current:', streamRef.current)
-    
-    if (isScanning && streamRef.current && videoRef.current) {
-      console.log('Setting stream in useEffect:', videoRef.current)
-      videoRef.current.srcObject = streamRef.current
-      videoRef.current.style.display = 'block'
-      videoRef.current.style.width = '100%'
-      videoRef.current.style.height = '100%'
-      
-      videoRef.current.onloadedmetadata = () => {
-        console.log('Video metadata loaded in useEffect')
-        console.log('Video readyState:', videoRef.current?.readyState)
-        console.log('Video videoWidth:', videoRef.current?.videoWidth)
-        console.log('Video videoHeight:', videoRef.current?.videoHeight)
-        videoRef.current?.play().then(() => {
-          console.log('Video playing successfully in useEffect')
-          // Запускаем сканирование после того, как видео готово
-          startBarcodeScanning()
-        }).catch(err => {
-          console.error('Error playing video in useEffect:', err)
-          // Все равно показываем видео и запускаем сканирование, даже если play не сработал
-          startBarcodeScanning()
-        })
+    let isMounted = true
+    let scanningTimeout: NodeJS.Timeout
+
+    const setupVideo = async () => {
+      if (!isMounted || !isScanning || !streamRef.current || !videoRef.current) {
+        return
       }
+
+      console.log('Setting up video stream...')
       
-      // Fallback для случаев, когда onloadedmetadata не срабатывает
-      setTimeout(() => {
-        console.log('Fallback check - video readyState:', videoRef.current?.readyState)
-        if (videoRef.current && videoRef.current.readyState === 0) {
-          console.log('Using fallback for video ready')
-          videoRef.current.play().catch(err => {
-            console.error('Fallback play failed:', err)
-          }).then(() => {
-            startBarcodeScanning()
+      try {
+        videoRef.current.srcObject = streamRef.current
+        
+        const handleLoadedMetadata = () => {
+          if (!isMounted) return
+          
+          console.log('Video metadata loaded')
+          videoRef.current?.play().then(() => {
+            console.log('Video playing successfully')
+            if (isMounted) {
+              startBarcodeScanning()
+            }
+          }).catch(err => {
+            console.error('Error playing video:', err)
+            if (isMounted) {
+              startBarcodeScanning()
+            }
           })
-        } else {
+        }
+
+        videoRef.current.onloadedmetadata = handleLoadedMetadata
+        
+        // Fallback timeout
+        scanningTimeout = setTimeout(() => {
+          if (isMounted && videoRef.current && videoRef.current.readyState === 0) {
+            console.log('Using fallback for video ready')
+            videoRef.current.play().catch(err => {
+              console.error('Fallback play failed:', err)
+            }).then(() => {
+              if (isMounted) {
+                startBarcodeScanning()
+              }
+            })
+          } else if (isMounted) {
+            startBarcodeScanning()
+          }
+        }, 2000)
+        
+      } catch (err) {
+        console.error('Error setting up video:', err)
+        if (isMounted) {
           startBarcodeScanning()
         }
-      }, 1000)
-    } else {
-      console.log('Cannot set stream - missing conditions:', {
-        isScanning,
-        hasStream: !!streamRef.current,
-        hasVideo: !!videoRef.current
-      })
+      }
+    }
+
+    if (isScanning) {
+      setupVideo()
+    }
+
+    return () => {
+      isMounted = false
+      if (scanningTimeout) {
+        clearTimeout(scanningTimeout)
+      }
     }
   }, [isScanning])
 
@@ -159,6 +183,13 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
     if (codeReaderRef.current && videoRef.current) {
       console.log('Starting barcode scanning...')
       try {
+        // Останавливаем предыдущее сканирование, если оно было
+        if (codeReaderRef.current) {
+          codeReaderRef.current.reset()
+        }
+        
+        isScanningRef.current = true
+        
         codeReaderRef.current.decodeFromVideoDevice(
           null, // Используем первую доступную камеру
           videoRef.current,
@@ -175,6 +206,7 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
       } catch (err) {
         console.error('Error starting barcode scanning:', err)
         setError('Ошибка при запуске сканирования штрихкодов')
+        isScanningRef.current = false
       }
     }
   }
