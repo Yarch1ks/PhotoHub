@@ -166,7 +166,6 @@ export default function HomePage() {
     <div className="container mx-auto p-4 sm:p-6 max-w-4xl">
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-2">PhotoHub</h1>
-        <p className="text-gray-600">Обработка изображений через webhook</p>
       </div>
 
       {/* Progress indicator */}
