@@ -45,6 +45,16 @@ export default function HomePage() {
     })
   }
 
+  const handlePhotoTaken = (photo: File) => {
+    // Добавляем фото в список файлов
+    setFiles(prev => [...prev, photo])
+    setShowScanner(false)
+    toast({
+      title: 'Фото добавлено',
+      description: `Фото "${photo.name}" добавлено для обработки`,
+    })
+  }
+
   const handleOpenScanner = () => {
     setShowScanner(true)
   }
@@ -312,6 +322,7 @@ export default function HomePage() {
           <div className="w-full max-w-md">
             <BarcodeScanner
               onBarcodeDetected={handleBarcodeDetected}
+              onPhotoTaken={handlePhotoTaken}
               onClose={handleCloseScanner}
             />
           </div>

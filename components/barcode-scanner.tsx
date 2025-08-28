@@ -3,21 +3,24 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Camera, Scan, X, Loader2 } from 'lucide-react'
+import { Camera, Scan, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library'
 
 interface BarcodeScannerProps {
   onBarcodeDetected: (barcode: string) => void
+  onPhotoTaken: (photo: File) => void
   onClose?: () => void
 }
 
-export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerProps) {
+export function BarcodeScanner({ onBarcodeDetected, onPhotoTaken, onClose }: BarcodeScannerProps) {
   const [isScanning, setIsScanning] = useState(false)
   const [detectedBarcode, setDetectedBarcode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
   const scanningRef = useRef<boolean>(false)
@@ -140,6 +143,62 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
     setDetectedBarcode(null)
   }
 
+  const takePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) {
+      return
+    }
+
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      return
+    }
+
+    // Устанавливаем размеры canvas как у видео
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+
+    // Рисуем текущий кадр с видео на canvas (с зеркальным отражением)
+    context.save()
+    context.scale(-1, 1)
+    context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
+    context.restore()
+
+    // Получаем data URL
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    setPhotoDataUrl(dataUrl)
+
+    // Создаем файл с уникальным именем
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const uniqueFileName = `photo_${timestamp}.jpg`
+    
+    // Конвертируем data URL в Blob, а затем в File
+    fetch(dataUrl)
+      .then(res => res.blob())
+      .then(blob => {
+        const photoFile = new File([blob], uniqueFileName, {
+          type: 'image/jpeg',
+          lastModified: Date.now()
+        })
+        onPhotoTaken(photoFile)
+        toast({
+          title: 'Фото сделано',
+          description: `Фото сохранено как ${uniqueFileName}`,
+        })
+        stopScanning()
+      })
+      .catch(err => {
+        console.error('Error converting photo to file:', err)
+        toast({
+          title: 'Ошибка',
+          description: 'Не удалось сохранить фото',
+          variant: 'destructive',
+        })
+      })
+  }
+
   const handleUseDetectedBarcode = () => {
     if (detectedBarcode) {
       onBarcodeDetected(detectedBarcode)
@@ -159,10 +218,10 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Camera className="w-5 h-5" />
-          Сканер штрихкодов
+          Камера
         </CardTitle>
         <CardDescription>
-          Наведите камеру на штрихкод для сканирования
+          Сделайте фото или отсканируйте штрихкод
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -175,6 +234,8 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
             className="w-full h-full object-cover transform scaleX(-1)"
             style={{ display: isScanning ? 'block' : 'none' }}
           />
+          <canvas ref={canvasRef} className="hidden" />
+          
           {!isScanning && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
@@ -183,16 +244,28 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
               </div>
             </div>
           )}
+          
           {isProcessing && (
             <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
               <Loader2 className="w-8 h-8 text-white animate-spin" />
             </div>
           )}
+          
           {detectedBarcode && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
               <div className="bg-white p-4 rounded-lg text-center">
                 <p className="font-mono text-lg font-semibold">{detectedBarcode}</p>
                 <p className="text-sm text-gray-600 mt-1">Штрихкод обнаружен</p>
+              </div>
+            </div>
+          )}
+
+          {photoDataUrl && (
+            <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+              <div className="text-center">
+                <ImageIcon className="w-12 h-12 mx-auto text-white mb-2" />
+                <p className="text-white font-medium">Фото сделано</p>
+                <p className="text-white/80 text-sm mt-1">Нажмите "Использовать фото"</p>
               </div>
             </div>
           )}
@@ -206,39 +279,92 @@ export function BarcodeScanner({ onBarcodeDetected, onClose }: BarcodeScannerPro
 
         <div className="flex gap-2">
           {!isScanning ? (
-            <Button 
+            <Button
               onClick={startScanning}
               className="flex-1"
               disabled={isProcessing || isScanning}
             >
               <Camera className="w-4 h-4 mr-2" />
-              {isProcessing ? 'Инициализация...' : 'Начать сканирование'}
+              {isProcessing ? 'Инициализация...' : 'Запустить камеру'}
             </Button>
           ) : (
-            <Button 
-              variant="outline" 
-              onClick={stopScanning}
-              className="flex-1"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Остановить
-            </Button>
+            <>
+              <Button
+                onClick={takePhoto}
+                className="flex-1"
+                disabled={isProcessing}
+              >
+                <ImageIcon className="w-4 h-4 mr-2" />
+                Сделать фото
+              </Button>
+              <Button
+                variant="outline"
+                onClick={stopScanning}
+                className="flex-1"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Остановить
+              </Button>
+            </>
           )}
+        </div>
 
+        <div className="flex gap-2">
           {detectedBarcode && (
-            <Button 
+            <Button
               onClick={handleUseDetectedBarcode}
               className="flex-1"
             >
               <Scan className="w-4 h-4 mr-2" />
-              Использовать
+              Использовать штрихкод
+            </Button>
+          )}
+
+          {photoDataUrl && (
+            <Button
+              onClick={() => {
+                if (photoDataUrl) {
+                  // Создаем файл с уникальным именем
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+                  const uniqueFileName = `photo_${timestamp}.jpg`
+                  
+                  // Конвертируем data URL в Blob, а затем в File
+                  fetch(photoDataUrl)
+                    .then(res => res.blob())
+                    .then(blob => {
+                      const photoFile = new File([blob], uniqueFileName, {
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                      })
+                      onPhotoTaken(photoFile)
+                      toast({
+                        title: 'Фото добавлено',
+                        description: `Фото добавлено как ${uniqueFileName}`,
+                      })
+                      setPhotoDataUrl(null)
+                      stopScanning()
+                    })
+                    .catch(err => {
+                      console.error('Error converting photo to file:', err)
+                      toast({
+                        title: 'Ошибка',
+                        description: 'Не удалось добавить фото',
+                        variant: 'destructive',
+                      })
+                    })
+                }
+              }}
+              className="flex-1"
+            >
+              <ImageIcon className="w-4 h-4 mr-2" />
+              Использовать фото
             </Button>
           )}
         </div>
 
         {onClose && (
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             onClick={onClose}
             className="w-full"
           >
