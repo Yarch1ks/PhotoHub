@@ -33,11 +33,11 @@ export default function HomePage() {
   const { toast } = useToast()
 
   const handleSkuChange = (value: string) => {
-    setSku(value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
+    setSku(value.replace(/[^0-9]/g, ''))
   }
 
   const handleBarcodeDetected = (barcode: string) => {
-    setSku(barcode.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
+    setSku(barcode.replace(/[^0-9]/g, ''))
     setShowScanner(false)
     toast({
       title: 'Штрихкод обнаружен',
@@ -75,7 +75,15 @@ export default function HomePage() {
     if (!sku.trim()) {
       toast({
         title: 'Ошибка',
-        description: 'Введите SKU',
+        description: 'Введите 6 цифр',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (sku.length !== 6) {
+      toast({
+        title: 'Ошибка',
+        description: 'SKU должен содержать ровно 6 цифр',
         variant: 'destructive',
       })
       return
@@ -185,7 +193,7 @@ export default function HomePage() {
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'sku' ? 'bg-blue-600 text-white' : step === 'files' ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
               1
             </div>
-            <span className="ml-2 font-medium">SKU</span>
+            <span className="ml-2 font-medium">6 цифр</span>
           </div>
           <ArrowRight className="h-4 w-4 text-gray-400" />
           <div className={`flex items-center ${step === 'files' ? 'text-blue-600' : 'text-gray-400'}`}>
@@ -205,19 +213,19 @@ export default function HomePage() {
               Шаг 1: Введите SKU
             </CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Введите артикул товара
+              Введите ровно 6 цифр
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="sku" className="text-sm sm:text-base">SKU</Label>
+              <Label htmlFor="sku" className="text-sm sm:text-base">6 цифр</Label>
               <div className="flex gap-2">
                 <Input
                   id="sku"
                   value={sku}
                   onChange={(e) => handleSkuChange(e.target.value)}
-                  placeholder="Например: ABC123"
-                  maxLength={50}
+                  placeholder="123456 - введите ровно 6 цифр"
+                  maxLength={6}
                   className="flex-1 text-center text-base sm:text-lg px-3 py-2"
                 />
                 <Button
