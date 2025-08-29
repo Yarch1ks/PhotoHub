@@ -193,7 +193,7 @@ export default function HomePage() {
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === 'sku' ? 'bg-blue-600 text-white' : step === 'files' ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
               1
             </div>
-            <span className="ml-2 font-medium">6 цифр</span>
+            <span className="ml-2 font-medium">SKU</span>
           </div>
           <ArrowRight className="h-4 w-4 text-gray-400" />
           <div className={`flex items-center ${step === 'files' ? 'text-blue-600' : 'text-gray-400'}`}>
@@ -218,7 +218,7 @@ export default function HomePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="sku" className="text-sm sm:text-base">6 цифр</Label>
+              <Label htmlFor="sku" className="text-sm sm:text-base">SKU</Label>
               <div className="flex gap-2">
                 <Input
                   id="sku"
