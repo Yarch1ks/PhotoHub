@@ -75,7 +75,7 @@ export default function HomePage() {
     if (!sku.trim()) {
       toast({
         title: 'Ошибка',
-        description: 'Введите 6 цифр',
+        description: 'Введите правильный SKU',
         variant: 'destructive',
       })
       return
@@ -213,7 +213,7 @@ export default function HomePage() {
               Шаг 1: Введите SKU
             </CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Введите ровно 6 цифр
+              Введите артикул товара
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -224,7 +224,7 @@ export default function HomePage() {
                   id="sku"
                   value={sku}
                   onChange={(e) => handleSkuChange(e.target.value)}
-                  placeholder="123456 - введите ровно 6 цифр"
+                  placeholder="123456"
                   maxLength={6}
                   className="flex-1 text-center text-base sm:text-lg px-3 py-2"
                 />
