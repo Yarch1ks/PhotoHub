@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Camera, Scan, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library'
+import { generateUniqueFileName, getFileExtension } from '@/lib/utils'
 
 interface BarcodeScannerProps {
   onBarcodeDetected: (barcode: string) => void
@@ -171,8 +172,7 @@ export function BarcodeScanner({ onBarcodeDetected, onPhotoTaken, onClose }: Bar
     setPhotoDataUrl(dataUrl)
 
     // Создаем файл с уникальным именем
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const uniqueFileName = `photo_${timestamp}.jpg`
+    const uniqueFileName = generateUniqueFileName(null, 'jpg')
     
     // Конвертируем data URL в Blob, а затем в File
     fetch(dataUrl)
@@ -325,8 +325,7 @@ export function BarcodeScanner({ onBarcodeDetected, onPhotoTaken, onClose }: Bar
               onClick={() => {
                 if (photoDataUrl) {
                   // Создаем файл с уникальным именем
-                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-                  const uniqueFileName = `photo_${timestamp}.jpg`
+                  const uniqueFileName = generateUniqueFileName(null, 'jpg')
                   
                   // Конвертируем data URL в Blob, а затем в File
                   fetch(photoDataUrl)

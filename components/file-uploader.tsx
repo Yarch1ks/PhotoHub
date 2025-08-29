@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import { generateUniqueFileName, getFileExtension } from '@/lib/utils'
 
 interface FileUploaderProps {
   onFilesSelected: (files: File[]) => void
@@ -39,7 +40,17 @@ export function FileUploader({
       return
     }
 
-    onFilesSelected(acceptedFiles)
+    // Генерируем уникальные имена для всех файлов
+    const filesWithUniqueNames = acceptedFiles.map(file => {
+      const fileExtension = getFileExtension(file.name)
+      const uniqueFileName = generateUniqueFileName(null, fileExtension)
+      return new File([file], uniqueFileName, {
+        type: file.type,
+        lastModified: Date.now()
+      })
+    })
+
+    onFilesSelected(filesWithUniqueNames)
     setIsDragActive(false)
   }, [maxFiles, onFilesSelected, toast])
 
