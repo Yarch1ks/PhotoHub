@@ -6,7 +6,7 @@ import { Toaster } from '@/components/ui/toaster'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'PhotoSKU - Обработка фотографий',
+  title: 'PhotoHub - Обработка фотографий',
   description: 'Автоматическая обработка фотографий с удалением фона и отправкой на webhook',
   icons: {
     icon: '/favicon.ico',
