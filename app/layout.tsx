@@ -9,9 +9,9 @@ export const metadata: Metadata = {
   title: 'PhotoHub - Обработка фотографий',
   description: 'Автоматическая обработка фотографий с удалением фона и отправкой на webhook',
   icons: {
-    icon: '/favicon.ico',
-    apple: '/favicon.png',
-    shortcut: '/favicon.png',
+    icon: '/PhotoHub.png',
+    apple: '/PhotoHub.png',
+    shortcut: '/PhotoHub.png',
   },
 }
 
