@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'PhotoHub - Обработка фотографий',
-  description: 'Автоматическая обработка фотографий с удалением фона и отправкой на webhook',
+  description: 'Автоматическая обработка фотографий',
   icons: [
     {
       url: '/PhotoHub.png',
@@ -31,7 +31,6 @@ export const metadata: Metadata = {
     },
   ],
   manifest: '/manifest.json',
-  apple: '/PhotoHub.png',
 }
 
 export default function RootLayout({
